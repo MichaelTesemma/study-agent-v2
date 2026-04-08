@@ -1,0 +1,8 @@
+sqlalchemy
+chromadb
+pypdf
+requests
+tiktoken
+fastapi
+uvicorn
+python-multipart

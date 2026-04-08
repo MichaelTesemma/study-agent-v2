@@ -1,0 +1,67 @@
+{
+  "agents": [
+    {
+      "name": "database-agent",
+      "description": "Design minimal SQLite schema using SQLAlchemy - single user, no auth, clear relationships",
+      "prompt": "prompts/1.database_agent.md",
+      "tools": ["write_file", "read_file", "edit"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "ingestion-agent",
+      "description": "Build PDF processing pipeline - extract text, chunk, embed, generate questions, store in SQLite/Chroma",
+      "prompt": "prompts/2.ingestion_agent.md",
+      "tools": ["write_file", "read_file", "edit", "run_shell_command"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "retrieval-agent",
+      "description": "Retrieve source chunks by ID for 'show source in book' feature",
+      "prompt": "prompts/3.retrieval_agent.md",
+      "tools": ["read_file", "write_file", "edit"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "selection-agent",
+      "description": "Select exactly 10 questions for study session, prioritizing weak concepts",
+      "prompt": "prompts/4.selection_agent.md",
+      "tools": ["read_file", "write_file", "edit"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "evaluation-agent",
+      "description": "Evaluate user answers, classify mistakes, provide explanations",
+      "prompt": "prompts/5.evaluation_agent.md",
+      "tools": ["read_file", "write_file", "edit"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "source-trace-agent",
+      "description": "Show users where to study - page numbers, excerpts, explanations",
+      "prompt": "prompts/6.source_trace_agent.md",
+      "tools": ["read_file", "write_file", "edit"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "concept-tracking-agent",
+      "description": "Track correct/wrong counts per concept, identify weak concepts",
+      "prompt": "prompts/7.concept_tracking_agent.md",
+      "tools": ["read_file", "write_file", "edit"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "session-orchestrator-agent",
+      "description": "Control complete study session flow - select questions, collect answers, evaluate, update stats",
+      "prompt": "prompts/8.session_orchestrator_agent.md",
+      "tools": ["read_file", "write_file", "edit", "run_shell_command"],
+      "model": "general-purpose"
+    },
+    {
+      "name": "setup-agent",
+      "description": "Make app easy to run locally - setup scripts, minimal config, beginner-friendly README",
+      "prompt": "prompts/9.setup_agent.md",
+      "tools": ["write_file", "read_file", "edit", "run_shell_command"],
+      "model": "general-purpose"
+    }
+  ]
+}

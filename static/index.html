@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; margin-bottom: 30px; color: #1a1a1a; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h2 { margin-bottom: 15px; font-size: 1.2em; }
+        button { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 1em; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        input, select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1em; width: 100%; margin-bottom: 10px; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; }
+        .hidden { display: none; }
+        .correct { color: #16a34a; font-weight: bold; }
+        .incorrect { color: #dc2626; font-weight: bold; }
+        .source-box { background: #f8fafc; border-left: 3px solid #2563eb; padding: 12px; margin-top: 10px; font-size: 0.9em; white-space: pre-wrap; }
+        .progress { text-align: center; margin-bottom: 15px; color: #64748b; }
+        .score { font-size: 2em; text-align: center; margin: 20px 0; }
+        .weak-list { list-style: none; }
+        .weak-list li { padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+        .nav { display: flex; gap: 10px; margin-bottom: 20px; }
+        .nav button { flex: 1; background: #e5e7eb; color: #333; }
+        .nav button.active { background: #2563eb; color: white; }
+        #status { text-align: center; padding: 10px; margin-bottom: 15px; border-radius: 6px; }
+        #status.ok { background: #dcfce7; color: #166534; }
+        #status.warn { background: #fef3c7; color: #92400e; }
+        textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1em; min-height: 80px; resize: vertical; }
+    </style>
+</head>
+<body>
+    <h1>Study Agent</h1>
+
+    <div id="status"></div>
+
+    <div class="nav">
+        <button class="active" onclick="showTab('upload')">Upload PDF</button>
+        <button onclick="showTab('study')">Study Session</button>
+        <button onclick="showTab('stats')">Statistics</button>
+    </div>
+
+    <!-- Upload Tab -->
+    <div id="tab-upload" class="tab">
+        <div class="card">
+            <h2>Upload a PDF</h2>
+            <label>Category</label>
+            <select id="upload-category"></select>
+            <button onclick="showNewCategoryInput()" style="margin-bottom:10px; font-size:0.9em; padding:6px 12px;">+ New Category</button>
+            <input id="new-category-input" class="hidden" placeholder="New category name">
+            <label>PDF File</label>
+            <input type="file" id="pdf-file" accept=".pdf">
+            <label>Questions per chunk</label>
+            <input type="number" id="questions-count" value="3" min="1">
+            <button id="upload-btn" onclick="uploadPdf()">Upload & Process</button>
+            <div id="upload-result" class="hidden" style="margin-top:15px;"></div>
+        </div>
+    </div>
+
+    <!-- Study Tab -->
+    <div id="tab-study" class="tab hidden">
+        <div id="study-setup" class="card">
+            <h2>Start a Study Session</h2>
+            <label>Category</label>
+            <select id="study-category"></select>
+            <button onclick="startSession()">Start Session (10 Questions)</button>
+        </div>
+
+        <div id="study-active" class="hidden">
+            <div class="card">
+                <div class="progress" id="question-progress"></div>
+                <h2 id="question-text"></h2>
+                <textarea id="answer-input" placeholder="Type your answer..."></textarea>
+                <button onclick="submitAnswer()" style="margin-top:10px;">Submit Answer</button>
+            </div>
+            <div id="feedback" class="card hidden"></div>
+        </div>
+
+        <div id="study-complete" class="card hidden">
+            <h2>Session Complete</h2>
+            <div class="score" id="final-score"></div>
+            <div id="weak-summary"></div>
+            <button onclick="resetStudy()" style="margin-top:15px;">Start New Session</button>
+        </div>
+    </div>
+
+    <!-- Stats Tab -->
+    <div id="tab-stats" class="tab hidden">
+        <div class="card">
+            <h2>Concept Statistics</h2>
+            <label>Category</label>
+            <select id="stats-category" onchange="loadStats()"></select>
+            <div id="stats-content"></div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentSession = null;
+        let currentQuestionIndex = 0;
+        let categories = [];
+
+        // Init
+        async function init() {
+            const status = await fetch("/api/health").then(r => r.json());
+            const el = document.getElementById("status");
+            if (status.ollama) {
+                el.className = "ok";
+                el.textContent = "Ollama is running";
+            } else {
+                el.className = "warn";
+                el.textContent = "WARNING: Ollama is not running. Question generation and answer evaluation will not work.";
+            }
+            await loadCategories();
+        }
+
+        async function loadCategories() {
+            categories = await fetch("/api/categories").then(r => r.json());
+            const selects = ["upload-category", "study-category", "stats-category"];
+            selects.forEach(id => {
+                const sel = document.getElementById(id);
+                sel.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+                if (categories.length === 0) sel.innerHTML = "<option>No categories yet</option>";
+            });
+        }
+
+        function showNewCategoryInput() {
+            const input = document.getElementById("new-category-input");
+            input.classList.toggle("hidden");
+            if (!input.classList.contains("hidden")) {
+                input.focus();
+            }
+        }
+
+        function showTab(name) {
+            document.querySelectorAll(".tab").forEach(t => t.classList.add("hidden"));
+            document.getElementById("tab-" + name).classList.remove("hidden");
+            document.querySelectorAll(".nav button").forEach(b => b.classList.remove("active"));
+            event.target.classList.add("active");
+        }
+
+        // Upload
+        async function uploadPdf() {
+            const fileInput = document.getElementById("pdf-file");
+            const newCatInput = document.getElementById("new-category-input");
+            const questionsCount = document.getElementById("questions-count").value;
+
+            if (!fileInput.files.length) { alert("Please select a PDF file."); return; }
+
+            let categoryId = document.getElementById("upload-category").value;
+
+            // Create new category if needed
+            if (!newCatInput.classList.contains("hidden") && newCatInput.value.trim()) {
+                const formData = new FormData();
+                formData.append("name", newCatInput.value.trim());
+                const cat = await fetch("/api/categories", { method: "POST", body: formData }).then(r => r.json());
+                categoryId = cat.id;
+                await loadCategories();
+            }
+
+            if (!categoryId) { alert("Please select or create a category."); return; }
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            formData.append("category_id", categoryId);
+            formData.append("questions_per_chunk", parseInt(questionsCount));
+
+            const btn = document.getElementById("upload-btn");
+            btn.disabled = true;
+            btn.textContent = "Processing...";
+
+            try {
+                const result = await fetch("/api/upload", { method: "POST", body: formData }).then(r => r.json());
+                const resultEl = document.getElementById("upload-result");
+                resultEl.classList.remove("hidden");
+                resultEl.innerHTML = `
+                    <div class="correct">Done!</div>
+                    <p>Document ID: ${result.document_id}</p>
+                    <p>Chunks: ${result.num_chunks}</p>
+                    <p>Questions generated: ${result.num_questions}</p>
+                `;
+                await loadCategories();
+            } catch (e) {
+                alert("Error processing PDF: " + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Upload & Process";
+            }
+        }
+
+        // Study session
+        async function startSession() {
+            const categoryId = document.getElementById("study-category").value;
+            if (!categoryId) { alert("Please select a category."); return; }
+
+            const formData = new FormData();
+            formData.append("category_id", categoryId);
+
+            const data = await fetch("/api/session/start", { method: "POST", body: formData }).then(r => r.json());
+            if (data.detail) { alert(data.detail); return; }
+
+            currentSession = data;
+            currentQuestionIndex = 0;
+
+            document.getElementById("study-setup").classList.add("hidden");
+            document.getElementById("study-active").classList.remove("hidden");
+            document.getElementById("study-complete").classList.add("hidden");
+
+            showQuestion();
+        }
+
+        function showQuestion() {
+            const q = currentSession.questions[currentQuestionIndex];
+            document.getElementById("question-progress").textContent = `Question ${currentQuestionIndex + 1} / ${currentSession.questions.length}`;
+            document.getElementById("question-text").textContent = q.text;
+            document.getElementById("answer-input").value = "";
+            document.getElementById("feedback").classList.add("hidden");
+            document.getElementById("answer-input").focus();
+        }
+
+        async function submitAnswer() {
+            const answer = document.getElementById("answer-input").value.trim();
+            if (!answer) { alert("Please type an answer."); return; }
+
+            const q = currentSession.questions[currentQuestionIndex];
+            const formData = new FormData();
+            formData.append("answer", answer);
+
+            const result = await fetch(`/api/session/${currentSession.session_id}/answer?question_id=${q.id}`, {
+                method: "POST",
+                body: formData,
+            }).then(r => r.json());
+
+            const feedback = document.getElementById("feedback");
+            feedback.classList.remove("hidden");
+
+            if (result.is_correct) {
+                feedback.innerHTML = `<div class="correct">Correct!</div>`;
+            } else {
+                let html = `<div class="incorrect">Incorrect</div>`;
+                html += `<p><strong>Correct answer:</strong> ${result.correct_answer}</p>`;
+                html += `<p><strong>Mistake type:</strong> ${result.mistake_type || "unknown"}</p>`;
+                html += `<p><strong>Explanation:</strong> ${result.explanation}</p>`;
+                if (result.source) {
+                    html += `<div class="source-box">${result.source.excerpt}</div>`;
+                }
+                feedback.innerHTML = html;
+            }
+
+            // Move to next question after delay
+            setTimeout(() => {
+                currentQuestionIndex++;
+                if (currentQuestionIndex < currentSession.questions.length) {
+                    showQuestion();
+                } else {
+                    endSession();
+                }
+            }, result.is_correct ? 1500 : 5000);
+        }
+
+        async function endSession() {
+            const data = await fetch(`/api/session/${currentSession.session_id}/end`, { method: "POST" }).then(r => r.json());
+
+            document.getElementById("study-active").classList.add("hidden");
+            document.getElementById("study-complete").classList.remove("hidden");
+
+            document.getElementById("final-score").textContent = data.score;
+
+            if (data.weak_concepts.length) {
+                document.getElementById("weak-summary").innerHTML = `
+                    <h3>Weak concepts to review:</h3>
+                    <ul class="weak-list">${data.weak_concepts.map(c =>
+                        `<li><strong>${c.concept}</strong>: ${c.correct} correct, ${c.wrong} wrong</li>`
+                    ).join("")}</ul>
+                `;
+            } else {
+                document.getElementById("weak-summary").innerHTML = "<p class='correct'>No weak concepts. Great job!</p>";
+            }
+        }
+
+        function resetStudy() {
+            document.getElementById("study-setup").classList.remove("hidden");
+            document.getElementById("study-active").classList.add("hidden");
+            document.getElementById("study-complete").classList.add("hidden");
+            currentSession = null;
+        }
+
+        // Stats
+        async function loadStats() {
+            const categoryId = document.getElementById("stats-category").value;
+            if (!categoryId) return;
+
+            const stats = await fetch(`/api/categories/${categoryId}/all-stats`).then(r => r.json());
+            const content = document.getElementById("stats-content");
+
+            if (!stats.length) {
+                content.innerHTML = "<p>No data yet. Complete some study sessions first.</p>";
+                return;
+            }
+
+            content.innerHTML = `
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr style="border-bottom:2px solid #e5e7eb; text-align:left;">
+                        <th style="padding:8px;">Concept</th>
+                        <th style="padding:8px;">Correct</th>
+                        <th style="padding:8px;">Wrong</th>
+                        <th style="padding:8px;">Status</th>
+                    </tr>
+                    ${stats.map(s => `
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:8px;">${s.concept}</td>
+                            <td style="padding:8px;" class="correct">${s.correct}</td>
+                            <td style="padding:8px;" class="${s.wrong > s.correct ? 'incorrect' : ''}">${s.wrong}</td>
+                            <td style="padding:8px;">${s.wrong > s.correct ? "Weak" : "OK"}</td>
+                        </tr>
+                    `).join("")}
+                </table>
+            `;
+        }
+
+        // Allow Enter key to submit answer
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && e.ctrlKey) {
+                const feedback = document.getElementById("feedback");
+                if (!feedback.classList.contains("hidden")) return;
+                submitAnswer();
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>
