@@ -72,9 +72,15 @@ async def upload_pdf(
     file: UploadFile = File(...),
     category_id: int = Form(...),
     questions_per_chunk: int = Form(3),
+    max_chunks: int | None = Form(None),
 ):
     session = Session()
     try:
+        if questions_per_chunk < 1:
+            raise HTTPException(status_code=400, detail="questions_per_chunk must be at least 1")
+        if max_chunks is not None and max_chunks < 1:
+            raise HTTPException(status_code=400, detail="max_chunks must be at least 1")
+
         # Save uploaded file
         upload_dir = "uploads"
         os.makedirs(upload_dir, exist_ok=True)
@@ -83,12 +89,19 @@ async def upload_pdf(
             content = await file.read()
             f.write(content)
 
-        result = process_pdf(session, pdf_path, category_id, questions_per_chunk)
+        result = process_pdf(
+            session,
+            pdf_path,
+            category_id,
+            questions_per_chunk,
+            max_chunks=max_chunks,
+        )
         session.commit()
         return {
             "message": "PDF processed successfully",
             "document_id": result["document_id"],
             "num_chunks": result["num_chunks"],
+            "total_chunks": result["total_chunks"],
             "num_questions": result["num_questions_generated"],
         }
     except Exception as e:
@@ -205,12 +218,52 @@ def end_session(session_id: int):
         if not qset:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        attempts = session.query(Attempt).join(QuestionSetItem).filter(
-            QuestionSetItem.question_set_id == session_id
-        ).all()
+        items = (
+            session.query(QuestionSetItem)
+            .filter(QuestionSetItem.question_set_id == session_id)
+            .all()
+        )
 
-        correct = sum(1 for a in attempts if a.is_correct == 1)
-        total = len(attempts)
+        results = []
+        correct = 0
+
+        for item in items:
+            question = session.query(Question).filter_by(id=item.question_id).first()
+            if question is None:
+                continue
+
+            attempt = (
+                session.query(Attempt)
+                .filter(Attempt.question_id == question.id)
+                .order_by(Attempt.id.desc())
+                .first()
+            )
+            if attempt is None:
+                continue
+
+            is_correct = attempt.is_correct == 1
+            if is_correct:
+                correct += 1
+
+            result = {
+                "question": question.text,
+                "is_correct": is_correct,
+                "mistake_type": attempt.mistake_type,
+                "explanation": attempt.explanation,
+                "correct_answer": question.answer,
+            }
+
+            if not is_correct:
+                chunk = get_chunk(session, question.source_chunk_id)
+                if chunk:
+                    result["source"] = {
+                        "page_number": chunk.page_number,
+                        "excerpt": format_source(chunk),
+                    }
+
+            results.append(result)
+
+        total = len(results)
 
         # Weak concepts
         weak = get_weak_concepts(session, qset.category_id)
@@ -222,6 +275,7 @@ def end_session(session_id: int):
         return {
             "score": f"{correct}/{total}",
             "weak_concepts": weak_concepts,
+            "results": results,
         }
     except HTTPException:
         raise

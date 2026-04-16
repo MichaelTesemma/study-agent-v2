@@ -323,7 +323,13 @@ def update_concept_stats(session, questions: list[Question], category_id: int):
 # ---------------------------------------------------------------------------
 # Main pipeline entry point
 # ---------------------------------------------------------------------------
-def process_pdf(session, pdf_path: str, category_id: int, number_of_questions: int):
+def process_pdf(
+    session,
+    pdf_path: str,
+    category_id: int,
+    number_of_questions: int,
+    max_chunks: int | None = None,
+):
     """Process a PDF file through the full ingestion pipeline.
 
     Args:
@@ -331,6 +337,7 @@ def process_pdf(session, pdf_path: str, category_id: int, number_of_questions: i
         pdf_path: Path to the PDF file on disk.
         category_id: The category this document belongs to.
         number_of_questions: How many questions to generate per chunk.
+        max_chunks: Optional limit on how many chunks to process from the PDF.
 
     Returns:
         dict with counts: document_id, num_chunks, num_questions_generated
@@ -351,7 +358,12 @@ def process_pdf(session, pdf_path: str, category_id: int, number_of_questions: i
     # --- Step 2: Split into chunks ---
     print("[2/6] Splitting text into chunks...")
     chunk_data = split_into_chunks(pages)
-    print(f"      Created {len(chunk_data)} chunks.")
+    total_chunks = len(chunk_data)
+    if max_chunks is not None:
+        chunk_data = chunk_data[:max_chunks]
+        print(f"      Created {total_chunks} chunks, processing {len(chunk_data)}.")
+    else:
+        print(f"      Created {total_chunks} chunks.")
 
     # --- Step 3: Store document and chunks in SQLite ---
     print("[3/6] Storing document and chunks in SQLite...")
@@ -392,5 +404,6 @@ def process_pdf(session, pdf_path: str, category_id: int, number_of_questions: i
     return {
         "document_id": document.id,
         "num_chunks": len(db_chunks),
+        "total_chunks": total_chunks,
         "num_questions_generated": len(db_questions),
     }

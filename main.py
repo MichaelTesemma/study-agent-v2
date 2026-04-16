@@ -101,14 +101,32 @@ def upload_pdf(session):
         print(f"Invalid number '{raw}'. Using default of 3.")
         num_questions = 3
 
+    raw_max_chunks = input("Maximum chunks to process (leave blank for all): ").strip()
+    try:
+        max_chunks = int(raw_max_chunks) if raw_max_chunks else None
+        if max_chunks is not None and max_chunks < 1:
+            raise ValueError
+    except ValueError:
+        print(f"Invalid number '{raw_max_chunks}'. Processing all chunks.")
+        max_chunks = None
+
     # Process the PDF
     print()
     try:
-        result = process_pdf(session, pdf_path, category_id, num_questions)
+        result = process_pdf(
+            session,
+            pdf_path,
+            category_id,
+            num_questions,
+            max_chunks=max_chunks,
+        )
         session.commit()
         print(f"\nDone! Document processed:")
         print(f"  Document ID: {result['document_id']}")
-        print(f"  Chunks: {result['num_chunks']}")
+        if result["total_chunks"] > result["num_chunks"]:
+            print(f"  Chunks processed: {result['num_chunks']} of {result['total_chunks']}")
+        else:
+            print(f"  Chunks: {result['num_chunks']}")
         print(f"  Questions generated: {result['num_questions_generated']}")
     except Exception as e:
         session.rollback()
