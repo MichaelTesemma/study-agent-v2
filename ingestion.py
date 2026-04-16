@@ -21,6 +21,7 @@ from pypdf import PdfReader
 
 from config import OLLAMA_BASE_URL, OLLAMA_MODEL, CHROMA_PERSIST_DIR
 from models import Document, Chunk, Question, ConceptStat
+from embeddings import generate_embedding
 
 # Tokenizer for counting tokens (cl100k_base = GPT-4 / GPT-3.5 encoding)
 TOKENIZER = tiktoken.get_encoding("cl100k_base")
@@ -166,7 +167,7 @@ def store_chunks(session, chunks: list[dict], document_id: int) -> list[Chunk]:
 def store_embeddings(chunks: list[Chunk], document_id: int):
     """Generate embeddings for each chunk and store them in Chroma.
 
-    Uses the default Chroma embedding function (all-MiniLM-L6-v2).
+    Uses sentence-transformers for consistent high-quality embeddings.
     """
     client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
@@ -177,21 +178,28 @@ def store_embeddings(chunks: list[Chunk], document_id: int):
     ids = []
     documents = []
     metadatas = []
+    texts = []
 
     for chunk in chunks:
         chunk_id = str(chunk.id)
         ids.append(chunk_id)
         documents.append(chunk.text)
+        texts.append(chunk.text)
         metadatas.append({
             "document_id": document_id,
             "page_number": chunk.page_number,
         })
+
+    # Generate embeddings using sentence-transformers
+    print(f"Generating embeddings for {len(texts)} chunks...")
+    embeddings = generate_embedding(texts)
 
     # Upsert embeddings (add or update)
     collection.upsert(
         ids=ids,
         documents=documents,
         metadatas=metadatas,
+        embeddings=embeddings,
     )
 
 

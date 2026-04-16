@@ -9,6 +9,7 @@ import chromadb
 
 from models import Chunk
 from config import CHROMA_PERSIST_DIR
+from embeddings import generate_embedding
 
 
 def get_chunk(session, chunk_id: int) -> Chunk | None:
@@ -52,8 +53,11 @@ def get_similar_chunks(session, chunk_id: int, n_results: int = 2) -> list[dict]
         # Collection does not exist -- no embeddings stored for this document
         return []
 
+    # Generate embedding for query using sentence-transformers
+    query_embedding = generate_embedding(chunk.text)
+    
     results = collection.query(
-        query_texts=[chunk.text],
+        query_embeddings=[query_embedding],
         n_results=n_results + 1,  # +1 because the source chunk itself will be returned
     )
 
